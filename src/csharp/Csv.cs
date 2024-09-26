@@ -130,9 +130,9 @@ public static class CsvModule
         return await BinaryData.FromStreamAsync(stream, cancellationToken);
     }
 
-    public static async ValueTask WriteRows(IEnumerable<CsvRow> rows, Stream stream)
+    public static async ValueTask WriteRows(IEnumerable<CsvRow> rows, Stream stream, bool leaveOpen = true)
     {
-        using var streamWriter = new StreamWriter(stream, leaveOpen: true);
+        using var streamWriter = new StreamWriter(stream, leaveOpen: leaveOpen);
         using var csvWriter = new CsvWriter(streamWriter, CultureInfo.InvariantCulture);
 
         await rows.OrderBy(row => row.Number)
@@ -175,14 +175,14 @@ public static class CsvModule
         new()
         {
             Number = GetRowNumber(reader),
-            Columns = GetColumnValues(reader)
+            Columns = GetRowColumns(reader)
         };
 
     private static CsvRowNumber GetRowNumber(IReader reader) =>
         CsvRowNumber.From(reader.Parser.RawRow)
                     .ThrowIfFail();
 
-    private static FrozenDictionary<CsvColumnNumber, string> GetColumnValues(IReader reader)
+    private static FrozenDictionary<CsvColumnNumber, string> GetRowColumns(IReader reader)
     {
         var values = reader.Parser.Record ?? [];
 
