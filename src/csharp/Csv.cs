@@ -135,19 +135,19 @@ public static class CsvModule
     {
         using var stream = new MemoryStream();
 
-        await WriteRows(rows, stream);
+        await WriteRows(rows, stream, leaveOpen: true, cancellationToken);
         stream.Position = 0;
 
         return await BinaryData.FromStreamAsync(stream, cancellationToken);
     }
 
-    public static async ValueTask WriteRows(IEnumerable<CsvRow> rows, Stream stream, bool leaveOpen = true)
+    public static async ValueTask WriteRows(IEnumerable<CsvRow> rows, Stream stream, bool leaveOpen = true, CancellationToken cancellationToken = default)
     {
         using var streamWriter = new StreamWriter(stream, leaveOpen: leaveOpen);
         using var csvWriter = new CsvWriter(streamWriter, CultureInfo.InvariantCulture);
 
         await rows.OrderBy(row => row.Number)
-                  .Iter(async row => await WriteRow(row, csvWriter));
+                  .Iter(async row => await WriteRow(row, csvWriter), cancellationToken);
 
         await csvWriter.FlushAsync();
     }

@@ -37,12 +37,15 @@ public static class EnumerableExtensions
                 : Option<T>.None;
     }
 
-    public static async ValueTask Iter<T>(this IEnumerable<T> enumerable, Func<T, ValueTask> action)
+    public static async ValueTask Iter<T>(this IEnumerable<T> enumerable, Func<T, ValueTask> action, CancellationToken cancellationToken)
     {
-        foreach (var item in enumerable)
+        var parallelOptions = new ParallelOptions
         {
-            await action(item);
-        }
+            CancellationToken = cancellationToken,
+            MaxDegreeOfParallelism = 1
+        };
+
+        await Parallel.ForEachAsync(enumerable, parallelOptions, async (t, _) => await action(t));
     }
 }
 
