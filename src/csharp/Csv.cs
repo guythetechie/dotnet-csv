@@ -28,6 +28,9 @@ public sealed record CsvRowNumber : IEquatable<CsvRowNumber>, IComparable<CsvRow
         ? new CsvRowNumber((uint)value)
         : Error.New("Row number must be greater than 0");
 
+    public static CsvRowNumber FromOrThrow(int value) =>
+        From(value).ThrowIfFail();
+
     public int CompareTo(CsvRowNumber? other) =>
         value.CompareTo(other?.value);
 
@@ -66,6 +69,9 @@ public sealed record CsvColumnNumber : IEquatable<CsvColumnNumber>, IComparable<
         ? new CsvColumnNumber((uint)value)
         : Error.New("Column number must be greater than 0");
 
+    public static CsvColumnNumber FromOrThrow(int value) =>
+        From(value).ThrowIfFail();
+
     public int CompareTo(CsvColumnNumber? other) =>
         value.CompareTo(other?.value);
 
@@ -101,6 +107,9 @@ public sealed record CsvColumnName
         ? Error.New("Column name must not be empty")
         : new CsvColumnName(value);
 
+    public static CsvColumnName FromOrThrow(string value) =>
+        From(value).ThrowIfFail();
+
     public override string ToString() => value;
 }
 
@@ -110,9 +119,11 @@ public sealed record CsvRow
 
     public required FrozenDictionary<CsvColumnNumber, string> Columns { get; init; }
 
-    public Option<string> GetValue(int columnNumber) =>
-        GetValue(CsvColumnNumber.From(columnNumber)
-                                .ThrowIfFail());
+    public Option<string> GetValue(int columnNumber)
+    {
+        var columnNumber_ = CsvColumnNumber.FromOrThrow(columnNumber);
+        return GetValue(columnNumber_);
+    }
 
     public Option<string> GetValue(CsvColumnNumber columnNumber) =>
         Columns.Find(columnNumber);
@@ -179,8 +190,7 @@ public static class CsvModule
         };
 
     private static CsvRowNumber GetRowNumber(IReader reader) =>
-        CsvRowNumber.From(reader.Parser.RawRow)
-                    .ThrowIfFail();
+        CsvRowNumber.FromOrThrow(reader.Parser.RawRow);
 
     private static FrozenDictionary<CsvColumnNumber, string> GetRowColumns(IReader reader)
     {
@@ -188,8 +198,7 @@ public static class CsvModule
 
         return values.Select((value, index) =>
         {
-            var columnNumber = CsvColumnNumber.From(index + 1)
-                                              .ThrowIfFail();
+            var columnNumber = CsvColumnNumber.FromOrThrow(index + 1);
 
             return (columnNumber, value);
         }).ToFrozenDictionary();
@@ -226,10 +235,8 @@ public static class CsvModule
         var headerValues = reader.Parser.Record ?? [];
 
         return headerValues.Where(value => string.IsNullOrWhiteSpace(value) is false)
-                           .Select((column, index) => (CsvColumnNumber.From(index + 1)
-                                                                      .ThrowIfFail(),
-                                                       CsvColumnName.From(column)
-                                                                    .ThrowIfFail()))
+                           .Select((column, index) => (CsvColumnNumber.FromOrThrow(index + 1),
+                                                       CsvColumnName.FromOrThrow(column)))
                            .ToFrozenDictionary();
     }
 }

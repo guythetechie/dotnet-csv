@@ -59,7 +59,7 @@ public class CsvModuleTests
             var expectedColumnNames = row.Columns
                                          .Values
                                          .Where(value => string.IsNullOrWhiteSpace(value) is false)
-                                         .Select(value => CsvColumnName.From(value).ThrowIfFail())
+                                         .Select(CsvColumnName.FromOrThrow)
                                          .ToImmutableArray();
 
             var actualColumnNames = headerDictionary.Values;
@@ -75,11 +75,11 @@ file static class Generator
     public static Gen<CsvColumnName> CsvColumnName { get; } =
         from name in Gen.String.AlphaNumeric
         where string.IsNullOrWhiteSpace(name) is false
-        select csharp.CsvColumnName.From(name).ThrowIfFail();
+        select csharp.CsvColumnName.FromOrThrow(name);
 
     public static Gen<FrozenDictionary<CsvColumnNumber, string>> CsvColumnValues { get; } =
         from values in Gen.String.AlphaNumeric.ImmutableArrayOf()
-        select values.Select((value, index) => (CsvColumnNumber.From(index + 1).ThrowIfFail(), value))
+        select values.Select((value, index) => (CsvColumnNumber.FromOrThrow(index + 1), value))
                      .ToFrozenDictionary();
 
     public static Gen<CsvRow> CsvRow { get; } =
@@ -88,13 +88,13 @@ file static class Generator
         from columns in CsvColumnValues
         select new CsvRow
         {
-            Number = CsvRowNumber.From(rowNumber).ThrowIfFail(),
+            Number = CsvRowNumber.FromOrThrow(rowNumber),
             Columns = columns
         };
 
     public static Gen<ImmutableArray<CsvRow>> CsvRows { get; } =
         from rows in CsvRow.ImmutableArrayOf()
-        select rows.Select((row, index) => row with { Number = CsvRowNumber.From(index + 1).ThrowIfFail() })
+        select rows.Select((row, index) => row with { Number = CsvRowNumber.FromOrThrow(index + 1) })
                    .ToImmutableArray();
 
     public static Gen<Option<T>> OptionOf<T>(this Gen<T> gen) =>
