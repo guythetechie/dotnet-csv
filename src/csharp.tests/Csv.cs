@@ -14,7 +14,7 @@ namespace csharp.tests;
 public class CsvModuleTests
 {
     [Fact]
-    public async Task Can_reverse_reading_and_writing()
+    public async Task Writing_then_reading_returns_the_original()
     {
         var generator = from ignoreBlankLines in Gen.Bool
                         from rows in Generator.CsvRows
