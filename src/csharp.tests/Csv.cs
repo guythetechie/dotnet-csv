@@ -47,7 +47,15 @@ public class CsvModuleTests
     [Fact]
     public async Task Can_extract_header_dictionary()
     {
-        var generator = Generator.CsvRow;
+        var generator = from row in Generator.CsvRow
+                        let columnNames = row.Columns
+                                             .Values
+                                             .Where(value => string.IsNullOrWhiteSpace(value) is false)
+                                             .Select(CsvColumnName.FromOrThrow)
+                                             .ToImmutableArray()
+                        // Ensure that there are no duplicate column names
+                        where columnNames.ToFrozenSet().Count == columnNames.Length
+                        select row;
 
         await generator.SampleAsync(async row =>
         {
@@ -62,7 +70,7 @@ public class CsvModuleTests
                                          .Select(CsvColumnName.FromOrThrow)
                                          .ToImmutableArray();
 
-            var actualColumnNames = headerDictionary.Values;
+            var actualColumnNames = headerDictionary.Keys;
 
             actualColumnNames.Except(expectedColumnNames).Should().BeEmpty();
             expectedColumnNames.Except(actualColumnNames).Should().BeEmpty();

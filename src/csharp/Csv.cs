@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -95,7 +96,9 @@ public sealed record CsvColumnNumber : IEquatable<CsvColumnNumber>, IComparable<
         left.value >= right.value;
 }
 
-public sealed record CsvColumnName
+#pragma warning disable CA1036 // Override methods on comparable types
+public sealed class CsvColumnName : IEquatable<CsvColumnName>, IComparable<CsvColumnName>
+#pragma warning restore CA1036 // Override methods on comparable types
 {
     private readonly string value;
 
@@ -111,6 +114,29 @@ public sealed record CsvColumnName
         From(value).ThrowIfFail();
 
     public override string ToString() => value;
+
+    public override bool Equals(object? obj) =>
+        obj is CsvColumnName other && Equals(other);
+
+    public override int GetHashCode() => value.GetHashCode(StringComparison.OrdinalIgnoreCase);
+
+    public bool Equals(CsvColumnName? other) =>
+        other is not null && value.Equals(other.value, StringComparison.OrdinalIgnoreCase);
+
+    public int CompareTo(CsvColumnName? other) =>
+        string.Compare(value, other?.value, StringComparison.OrdinalIgnoreCase);
+
+    public static bool operator ==(CsvColumnName? left, CsvColumnName? right) =>
+        (left, right) switch
+        {
+            (null, null) => true,
+            (null, _) => false,
+            (_, null) => false,
+            (_, _) => left.Equals(right)
+        };
+
+    public static bool operator !=(CsvColumnName left, CsvColumnName right) =>
+        !(left == right);
 }
 
 public sealed record CsvRow
@@ -204,7 +230,7 @@ public static class CsvModule
         }).ToFrozenDictionary();
     }
 
-    public static async ValueTask<FrozenDictionary<CsvColumnNumber, CsvColumnName>> GetHeaderDictionary(BinaryData data)
+    public static async ValueTask<FrozenDictionary<CsvColumnName, CsvColumnNumber>> GetHeaderDictionary(BinaryData data)
     {
         var configuration = new CsvConfiguration(CultureInfo.InvariantCulture)
         {
@@ -224,19 +250,19 @@ public static class CsvModule
         }
         catch (ReaderException exception) when (exception.Message.Contains("No header record was found."))
         {
-            return FrozenDictionary<CsvColumnNumber, CsvColumnName>.Empty;
+            return FrozenDictionary<CsvColumnName, CsvColumnNumber>.Empty;
         }
 
         return GetHeaderDictionary(reader);
     }
 
-    private static FrozenDictionary<CsvColumnNumber, CsvColumnName> GetHeaderDictionary(IReader reader)
+    private static FrozenDictionary<CsvColumnName, CsvColumnNumber> GetHeaderDictionary(IReader reader)
     {
         var headerValues = reader.Parser.Record ?? [];
 
         return headerValues.Where(value => string.IsNullOrWhiteSpace(value) is false)
-                           .Select((column, index) => (CsvColumnNumber.FromOrThrow(index + 1),
-                                                       CsvColumnName.FromOrThrow(column)))
+                           .Select((column, index) => (CsvColumnName.FromOrThrow(column),
+                                                       CsvColumnNumber.FromOrThrow(index + 1)))
                            .ToFrozenDictionary();
     }
 }
