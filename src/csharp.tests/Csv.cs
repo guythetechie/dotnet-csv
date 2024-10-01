@@ -76,10 +76,86 @@ public class CsvModuleTests
             expectedColumnNames.Except(actualColumnNames).Should().BeEmpty();
         });
     }
+
+    [Fact]
+    public void FindValue_by_column_number_returns_none_when_column_number_does_not_exist()
+    {
+        var generator = from row in Generator.CsvRow
+                        let columnNumbers = row.GetColumnNumbers()
+                        from nonExistingColumnNumber in Generator.ColumnNumber
+                        where columnNumbers.Contains(nonExistingColumnNumber) is false
+                        select (row, nonExistingColumnNumber);
+
+        generator.Sample(x =>
+        {
+            var (row, nonExistingColumnNumber) = x;
+            row.FindValue(nonExistingColumnNumber).Should().BeNone();
+        });
+    }
+
+    [Fact]
+    public void FindValue_by_column_number_returns_the_value()
+    {
+        var generator = from row in Generator.CsvRow
+                        where row.Columns.Count > 0
+                        from column in Gen.OneOfConst(row.Columns.ToArray())
+                        select (row, column);
+
+        generator.Sample(x =>
+        {
+            var (row, (columnNumber, columnValue)) = x;
+            row.FindValue(columnNumber).Should().BeSome(expected: columnValue);
+        });
+    }
+
+    [Fact]
+    public void FindValue_by_column_number_integer_returns_none_when_column_number_does_not_exist()
+    {
+        var generator = from row in Generator.CsvRow
+                        let columnNumbers = row.GetColumnNumbers()
+                        from nonExistingColumnNumber in Generator.ColumnNumber
+                        where columnNumbers.Contains(nonExistingColumnNumber) is false
+                        select (row, nonExistingColumnNumber.ToInt());
+
+        generator.Sample(x =>
+        {
+            var (row, nonExistingNumber) = x;
+            row.FindValue(nonExistingNumber).Should().BeNone();
+        });
+    }
+
+    [Fact]
+    public void FindValue_by_column_number_integer_returns_the_value()
+    {
+        var generator = from row in Generator.CsvRow
+                        where row.Columns.Count > 0
+                        from column in Gen.OneOfConst(row.Columns.ToArray())
+                        select (row, column);
+
+        generator.Sample(x =>
+        {
+            var (row, (columnNumber_, columnValue)) = x;
+            var columnNumber = columnNumber_.ToInt();
+            row.FindValue(columnNumber).Should().BeSome(expected: columnValue);
+        });
+    }
+}
+
+file static class Extensions
+{
+    public static FrozenSet<CsvColumnNumber> GetColumnNumbers(this CsvRow row) =>
+        row.Columns
+           .Keys
+           .ToFrozenSet();
 }
 
 file static class Generator
 {
+    public static Gen<CsvColumnNumber> ColumnNumber { get; } =
+        from number in Gen.Int.Positive
+        where number > 0
+        select CsvColumnNumber.FromOrThrow(number);
+
     public static Gen<CsvColumnName> CsvColumnName { get; } =
         from name in Gen.String.AlphaNumeric
         where string.IsNullOrWhiteSpace(name) is false

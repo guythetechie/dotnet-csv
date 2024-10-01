@@ -83,6 +83,8 @@ public sealed record CsvColumnNumber : IEquatable<CsvColumnNumber>, IComparable<
 
     public override string ToString() => value.ToString();
 
+    public int ToInt() => (int)value;
+
     public static bool operator <(CsvColumnNumber left, CsvColumnNumber right) =>
         left?.value < right?.value;
 
@@ -145,14 +147,22 @@ public sealed record CsvRow
 
     public required FrozenDictionary<CsvColumnNumber, string> Columns { get; init; }
 
-    public Option<string> GetValue(int columnNumber)
-    {
-        var columnNumber_ = CsvColumnNumber.FromOrThrow(columnNumber);
-        return GetValue(columnNumber_);
-    }
+    public Option<string> FindValue(int columnNumber) =>
+        CsvColumnNumber.From(columnNumber)
+                       .ToOption()
+                       .Bind(FindValue);
 
-    public Option<string> GetValue(CsvColumnNumber columnNumber) =>
+    public Option<string> FindValue(CsvColumnNumber columnNumber) =>
         Columns.Find(columnNumber);
+
+    public Option<string> FindValue(string columnName, IDictionary<CsvColumnName, CsvColumnNumber> headerDictionary) =>
+        CsvColumnName.From(columnName)
+                     .ToOption()
+                     .Bind(columnName => FindValue(columnName, headerDictionary));
+
+    public Option<string> FindValue(CsvColumnName columnName, IDictionary<CsvColumnName, CsvColumnNumber> headerDictionary) =>
+        headerDictionary.Find(columnName)
+                        .Bind(FindValue);
 }
 
 public static class CsvModule
