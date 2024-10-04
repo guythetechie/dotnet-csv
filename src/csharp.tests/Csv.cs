@@ -1,6 +1,7 @@
 ﻿using CsCheck;
 using FluentAssertions;
 using LanguageExt;
+using System;
 using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Collections.Immutable;
@@ -14,16 +15,14 @@ namespace csharp.tests;
 public class CsvModuleTests
 {
     [Fact]
-    public async Task Writing_then_reading_returns_the_original()
+    public async Task Writing_then_reading_returns_the_original_without_blank_lines()
     {
-        var generator = from ignoreBlankLines in Gen.Bool
-                        from rows in Generator.CsvRows
-                        select (ignoreBlankLines, rows);
+        var generator = Generator.CsvRows;
 
-        await generator.SampleAsync(async x =>
+        await generator.SampleAsync(async rows =>
         {
             // Arrange
-            var (ignoreBlankLines, rows) = x;
+            var ignoreBlankLines = true;
             var cancellationToken = CancellationToken.None;
 
             // Act
@@ -32,15 +31,29 @@ public class CsvModuleTests
                                           .ToImmutableArray(cancellationToken);
 
             // Assert
-            if (ignoreBlankLines)
-            {
-                var rowsWithData = rows.Where(row => row.Columns.Values.Any(value => string.IsNullOrWhiteSpace(value) is false));
-                rowsWithData.Should().HaveSameCount(readRows);
-            }
-            else
-            {
-                rows.Should().HaveSameCount(readRows);
-            }
+            var rowIsNotBlank = (CsvRow row) => row.Columns.Values.Any(value => string.IsNullOrWhiteSpace(value) is false);
+            var expectedRows = rows.Where(rowIsNotBlank);
+            readRows.Should().HaveSameCount(expectedRows);
+        });
+    }
+
+    [Fact]
+    public async Task Writing_then_reading_returns_the_original()
+    {
+        var generator = Generator.CsvRows;
+        await generator.SampleAsync(async rows =>
+        {
+            // Arrange
+            var ignoreBlankLines = false;
+            var cancellationToken = CancellationToken.None;
+
+            // Act
+            var binaryData = await CsvModule.WriteRows(rows, cancellationToken);
+            var readRows = await CsvModule.GetRows(binaryData, ignoreBlankLines: ignoreBlankLines)
+                                          .ToImmutableArray(cancellationToken);
+
+            // Assert
+            readRows.Should().HaveSameCount(rows);
         });
     }
 
@@ -48,13 +61,7 @@ public class CsvModuleTests
     public async Task Can_extract_header_dictionary()
     {
         var generator = from row in Generator.CsvRow
-                        let columnNames = row.Columns
-                                             .Values
-                                             .Where(value => string.IsNullOrWhiteSpace(value) is false)
-                                             .Select(CsvColumnName.FromOrThrow)
-                                             .ToImmutableArray()
-                        // Ensure that there are no duplicate column names
-                        where columnNames.ToFrozenSet().Count == columnNames.Length
+                        where RowHasDistinctNonEmptyValues(row)
                         select row;
 
         await generator.SampleAsync(async row =>
@@ -77,24 +84,50 @@ public class CsvModuleTests
         });
     }
 
+    private static bool RowHasDistinctNonEmptyValues(CsvRow row) =>
+        row.Columns
+           .Values
+           .Where(value => string.IsNullOrWhiteSpace(value) is false)
+           .GroupBy(value => value, StringComparer.OrdinalIgnoreCase)
+           .All(group => group.Count() == 1);
+
     [Fact]
-    public void FindValue_by_column_number_returns_none_when_column_number_does_not_exist()
+    public void Return_none_when_finding_value_by_column_number_and_column_number_does_not_exist()
     {
         var generator = from row in Generator.CsvRow
-                        let columnNumbers = row.GetColumnNumbers()
                         from nonExistingColumnNumber in Generator.ColumnNumber
-                        where columnNumbers.Contains(nonExistingColumnNumber) is false
+                        where ColumnNumberExists(row, nonExistingColumnNumber) is false
                         select (row, nonExistingColumnNumber);
 
         generator.Sample(x =>
         {
             var (row, nonExistingColumnNumber) = x;
-            row.FindValue(nonExistingColumnNumber).Should().BeNone();
+            var option = row.FindValue(nonExistingColumnNumber);
+            option.Should().BeNone();
+        });
+    }
+
+    private static bool ColumnNumberExists(CsvRow row, CsvColumnNumber columnNumber) =>
+        row.Columns.ContainsKey(columnNumber);
+
+    [Fact]
+    public void Return_none_when_finding_value_by_integer_column_number_and_column_number_does_not_exist()
+    {
+        var generator = from row in Generator.CsvRow
+                        from nonExistingColumnNumber in Generator.ColumnNumber
+                        where ColumnNumberExists(row, nonExistingColumnNumber) is false
+                        select (row, nonExistingColumnNumber.ToInt());
+
+        generator.Sample(x =>
+        {
+            var (row, nonExistingColumnNumber) = x;
+            var option = row.FindValue(nonExistingColumnNumber);
+            option.Should().BeNone();
         });
     }
 
     [Fact]
-    public void FindValue_by_column_number_returns_the_value()
+    public void Can_successfully_find_value_by_column_number()
     {
         var generator = from row in Generator.CsvRow
                         where row.Columns.Count > 0
@@ -104,39 +137,110 @@ public class CsvModuleTests
         generator.Sample(x =>
         {
             var (row, (columnNumber, columnValue)) = x;
-            row.FindValue(columnNumber).Should().BeSome(expected: columnValue);
+            var option = row.FindValue(columnNumber);
+            option.Should().BeSome(columnValue);
         });
     }
 
     [Fact]
-    public void FindValue_by_column_number_integer_returns_none_when_column_number_does_not_exist()
-    {
-        var generator = from row in Generator.CsvRow
-                        let columnNumbers = row.GetColumnNumbers()
-                        from nonExistingColumnNumber in Generator.ColumnNumber
-                        where columnNumbers.Contains(nonExistingColumnNumber) is false
-                        select (row, nonExistingColumnNumber.ToInt());
-
-        generator.Sample(x =>
-        {
-            var (row, nonExistingNumber) = x;
-            row.FindValue(nonExistingNumber).Should().BeNone();
-        });
-    }
-
-    [Fact]
-    public void FindValue_by_column_number_integer_returns_the_value()
+    public void Can_successfully_find_value_by_integer_column_number()
     {
         var generator = from row in Generator.CsvRow
                         where row.Columns.Count > 0
                         from column in Gen.OneOfConst(row.Columns.ToArray())
                         select (row, column);
+        generator.Sample(x =>
+        {
+            // Arrange
+            var (row, (columnNumber_, columnValue)) = x;
+            var columnNumber = columnNumber_.ToInt();
+
+            // Act
+            var option = row.FindValue(columnNumber);
+
+            // Assert
+            option.Should().BeSome(columnValue);
+        });
+    }
+
+    [Fact]
+    public void Return_none_when_finding_value_by_column_name_and_column_name_does_not_exist()
+    {
+        var generator = from row in Generator.CsvRow
+                        where RowHasDistinctNonEmptyValues(row)
+                        let columnNames = row.Columns.Values
+                        let headerDictionary = CsvModule.GetHeaderDictionary(columnNames)
+                        from nonExistingColumnName in Generator.CsvColumnName
+                        where ColumnNameExists(row, nonExistingColumnName, headerDictionary) is false
+                        select (row, nonExistingColumnName, headerDictionary);
 
         generator.Sample(x =>
         {
-            var (row, (columnNumber_, columnValue)) = x;
-            var columnNumber = columnNumber_.ToInt();
-            row.FindValue(columnNumber).Should().BeSome(expected: columnValue);
+            var (row, nonExistingColumnName, headerDictionary) = x;
+            var option = row.FindValue(nonExistingColumnName, headerDictionary);
+            option.Should().BeNone();
+        });
+    }
+
+    private static bool ColumnNameExists(CsvRow row, CsvColumnName columnName, IDictionary<CsvColumnName, CsvColumnNumber> headerDictionary) =>
+        headerDictionary.Find(columnName)
+                        .Where(columnNumber => ColumnNumberExists(row, columnNumber))
+                        .IsSome;
+
+    [Fact]
+    public void Return_none_when_finding_value_by_string_column_name_and_column_name_does_not_exist()
+    {
+        var generator = from row in Generator.CsvRow
+                        where RowHasDistinctNonEmptyValues(row)
+                        let columnNames = row.Columns.Values
+                        let headerDictionary = CsvModule.GetHeaderDictionary(columnNames)
+                        from nonExistingColumnName in Generator.CsvColumnName
+                        where ColumnNameExists(row, nonExistingColumnName, headerDictionary) is false
+                        select (row, nonExistingColumnName.ToString());
+
+        generator.Sample(x =>
+        {
+            var (row, nonExistingColumnName) = x;
+            var option = row.FindValue(nonExistingColumnName, new Dictionary<CsvColumnName, CsvColumnNumber>());
+            option.Should().BeNone();
+        });
+    }
+
+    [Fact]
+    public void Can_successfully_find_value_by_column_name()
+    {
+        var generator = from row in Generator.CsvRow
+                        where RowHasDistinctNonEmptyValues(row)
+                        let columnNames = row.Columns.Values
+                        let headerDictionary = CsvModule.GetHeaderDictionary(columnNames)
+                        where headerDictionary.Count > 0
+                        from columnName in Gen.OneOfConst(headerDictionary.Keys.ToArray())
+                        select (row, columnName, headerDictionary);
+
+        generator.Sample(x =>
+        {
+            var (row, columnName, headerDictionary) = x;
+            var option = row.FindValue(columnName, headerDictionary);
+            option.Should().BeSome(columnName.ToString());
+        });
+    }
+
+    [Fact]
+    public void Can_successfully_find_value_by_string_column_name()
+    {
+        var generator = from row in Generator.CsvRow
+                        where RowHasDistinctNonEmptyValues(row)
+                        let columnNames = row.Columns.Values
+                        let headerDictionary = CsvModule.GetHeaderDictionary(columnNames)
+                        where headerDictionary.Count > 0
+                        from columnName in Gen.OneOfConst(headerDictionary.Keys.ToArray())
+                        select (row, columnName.ToString(), headerDictionary);
+
+        generator.Sample(x =>
+        {
+            var (row, columnName, headerDictionary) = x;
+            var option = row.FindValue(columnName, headerDictionary);
+            option.Should().BeSome(columnName);
         });
     }
 }

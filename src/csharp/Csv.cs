@@ -266,13 +266,14 @@ public static class CsvModule
         return GetHeaderDictionary(reader);
     }
 
-    private static FrozenDictionary<CsvColumnName, CsvColumnNumber> GetHeaderDictionary(IReader reader)
-    {
-        var headerValues = reader.Parser.Record ?? [];
+    private static FrozenDictionary<CsvColumnName, CsvColumnNumber> GetHeaderDictionary(IReader reader) =>
+        GetHeaderDictionary(reader.Parser.Record ?? []);
 
-        return headerValues.Where(value => string.IsNullOrWhiteSpace(value) is false)
-                           .Select((column, index) => (CsvColumnName.FromOrThrow(column),
-                                                       CsvColumnNumber.FromOrThrow(index + 1)))
-                           .ToFrozenDictionary();
-    }
+    public static FrozenDictionary<CsvColumnName, CsvColumnNumber> GetHeaderDictionary(IEnumerable<string> headerValues) =>
+        headerValues.Select((column, index) => (column, index))
+                    .Choose(x => string.IsNullOrWhiteSpace(x.column)
+                                    ? Option<(CsvColumnName, CsvColumnNumber)>.None
+                                    : (CsvColumnName.FromOrThrow(x.column),
+                                       CsvColumnNumber.FromOrThrow(x.index + 1)))
+                    .ToFrozenDictionary();
 }
